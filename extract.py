@@ -4,46 +4,83 @@ import email
 import argparse
 from email import policy
 from email.utils import parsedate_to_datetime
+import re
 
-def safe_name(name):
+
+# -------------------------
+# Helpers
+# -------------------------
+
+def safe_name(name: str) -> str:
     return "".join(c if c.isalnum() or c in "._-@" else "_" for c in name)
 
-def get_year_month(message):
+
+def get_year_month(msg):
     try:
-        dt = parsedate_to_datetime(message.get("date"))
+        dt = parsedate_to_datetime(msg.get("date"))
         return str(dt.year), dt.strftime("%B")
     except:
-        return None, None  # IMPORTANT: unknown dates won't create folders
+        return None, None
 
-def get_email_body_as_html(message):
-    if message.is_multipart():
-        for part in message.walk():
-            if part.get_content_type() == "text/html":
-                return part.get_payload(decode=True).decode(errors="ignore")
-        for part in message.walk():
-            if part.get_content_type() == "text/plain":
-                text = part.get_payload(decode=True).decode(errors="ignore")
+
+def get_html(msg):
+    if msg.is_multipart():
+        for p in msg.walk():
+            if p.get_content_type() == "text/html":
+                return p.get_payload(decode=True).decode(errors="ignore")
+        for p in msg.walk():
+            if p.get_content_type() == "text/plain":
+                text = p.get_payload(decode=True).decode(errors="ignore")
                 return f"<pre>{text}</pre>"
     else:
-        if message.get_content_type() == "text/html":
-            return message.get_payload(decode=True).decode(errors="ignore")
-        elif message.get_content_type() == "text/plain":
-            text = message.get_payload(decode=True).decode(errors="ignore")
-            return f"<pre>{text}</pre>"
+        if msg.get_content_type() in ["text/html", "text/plain"]:
+            return msg.get_payload(decode=True).decode(errors="ignore")
     return None
 
+
+def build_base(output, year, month, sender=None, by_sender=False):
+    base = output
+
+    if year and month:
+        base = os.path.join(base, year, month)
+    else:
+        base = os.path.join(base, "UnknownDate")
+
+    if by_sender and sender:
+        base = os.path.join(base, sender)
+
+    return base
+
+
 def ensure_dir(path):
-    """Create directory only when actually needed"""
     os.makedirs(path, exist_ok=True)
 
+
+def unique_path(path):
+    base, ext = os.path.splitext(path)
+    i = 1
+    while os.path.exists(path):
+        path = f"{base}_{i}{ext}"
+        i += 1
+    return path
+
+
+# -------------------------
+# Main
+# -------------------------
+
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="MBOX Extractor (clean refactor)")
+
     parser.add_argument("mbox")
     parser.add_argument("-o", "--output", default="output")
+
     parser.add_argument("--types", nargs="+")
     parser.add_argument("--by-sender", action="store_true")
+
     parser.add_argument("--html", action="store_true")
     parser.add_argument("--html-all", action="store_true")
+
     args = parser.parse_args()
 
     mbox = mailbox.mbox(
@@ -51,86 +88,93 @@ def main():
         factory=lambda f: email.message_from_binary_file(f, policy=policy.default)
     )
 
-    for i, message in enumerate(mbox):
+    email_count = 0
+    attach_count = 0
 
-        year, month = get_year_month(message)
-        sender = safe_name(message.get("from", "unknown"))
-        subject = safe_name(message.get("subject", f"email_{i}"))
+    for i, msg in enumerate(mbox):
 
-        # Precompute folder path (BUT DO NOT CREATE YET)
-        base_dir = args.output
+        # -------------------------
+        # Metadata
+        # -------------------------
+        year, month = get_year_month(msg)
 
-        if year and month:
-            base_dir = os.path.join(base_dir, year, month)
-        else:
-            base_dir = os.path.join(base_dir, "UnknownDate")
+        raw_sender = msg.get("from", "unknown")
+        sender_safe = safe_name(re.sub(r"<.*?>", "", raw_sender).strip())
 
-        if args.by_sender:
-            base_dir = os.path.join(base_dir, sender)
+        subject = safe_name(msg.get("subject", f"email_{i}"))
 
-        email_saved = False
+        base = build_base(
+            args.output,
+            year,
+            month,
+            sender_safe,
+            args.by_sender
+        )
 
-        # ---------------- HTML ----------------
+        wrote_something = False
+
+        # -------------------------
+        # HTML EXPORT
+        # -------------------------
         export_html = False
 
         if args.html:
             export_html = any(
-                part.get_content_disposition() == "attachment"
-                for part in message.walk()
+                p.get_content_disposition() == "attachment"
+                for p in msg.walk()
             )
 
         if args.html_all:
             export_html = True
 
         if export_html:
-            html = get_email_body_as_html(message)
+            html = get_html(msg)
 
-            if html:  # only create folder if content exists
-                ensure_dir(base_dir)
+            if html:
+                ensure_dir(base)
 
-                path = os.path.join(base_dir, f"{subject}_{i}.html")
-
-                base, ext = os.path.splitext(path)
-                c = 1
-                while os.path.exists(path):
-                    path = f"{base}_{c}{ext}"
-                    c += 1
+                path = os.path.join(base, f"{sender_safe}_{subject}_{i}.html")
+                path = unique_path(path)
 
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(html)
 
-                print(f"Saved email: {path}")
-                email_saved = True
+                print("Saved email:", path)
+                email_count += 1
+                wrote_something = True
 
-        # ---------------- ATTACHMENTS ----------------
-        for part in message.walk():
+        # -------------------------
+        # ATTACHMENTS
+        # -------------------------
+        for part in msg.walk():
             if part.get_content_disposition() != "attachment":
                 continue
 
             filename = part.get_filename() or f"attachment_{i}"
             filename = safe_name(filename)
 
-            filepath = os.path.join(base_dir, filename)
+            # type filtering
+            if args.types:
+                allowed = tuple(f".{t.lower().lstrip('.')}" for t in args.types)
+                if not filename.lower().endswith(allowed):
+                    continue
 
-            base, ext = os.path.splitext(filepath)
-            c = 1
-            while os.path.exists(filepath):
-                filepath = f"{base}_{c}{ext}"
-                c += 1
+            ensure_dir(base)
 
-            # ONLY create folder if we are actually saving something
-            ensure_dir(base_dir)
+            path = os.path.join(base, filename)
+            path = unique_path(path)
 
-            with open(filepath, "wb") as f:
+            with open(path, "wb") as f:
                 f.write(part.get_payload(decode=True))
 
-            print(f"Saved attachment: {filepath}")
-            email_saved = True
-
-        # Optional: skip empty emails entirely
-        # (no HTML + no attachments → no folder ever created)
+            print("Saved attachment:", path)
+            attach_count += 1
+            wrote_something = True
 
     print("\nDone.")
+    print(f"Emails exported: {email_count}")
+    print(f"Attachments saved: {attach_count}")
+
 
 if __name__ == "__main__":
     main()
