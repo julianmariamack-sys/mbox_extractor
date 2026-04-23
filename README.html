@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MBOX Extractor</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        margin: 40px;
+        max-width: 900px;
+        color: #222;
+    }
+    h1, h2, h3 {
+        color: #2c3e50;
+    }
+    code {
+        background: #f4f4f4;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    pre {
+        background: #f4f4f4;
+        padding: 12px;
+        border-radius: 6px;
+        overflow-x: auto;
+    }
+    .box {
+        background: #f9f9f9;
+        border-left: 4px solid #3498db;
+        padding: 10px 15px;
+        margin: 15px 0;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>📬 MBOX Extractor</h1>
+
+<p>
+A lightweight offline tool for extracting <b>emails and attachments</b> from <code>.mbox</code> files,
+with optional HTML export and GUI support.
+</p>
+
+<hr>
+
+<h2>✨ Features</h2>
+
+<ul>
+<li>📎 Extract all attachments from MBOX files</li>
+<li>📄 Export emails as HTML (single or full archive)</li>
+<li>📁 Organize by Year → Month structure</li>
+<li>👤 Optional grouping by sender</li>
+<li>🖥️ Simple GUI included</li>
+</ul>
+
+<hr>
+
+<h2>⚙️ Installation</h2>
+
+<pre>
+git clone https://github.com/yourname/mbox-extractor.git
+cd mbox-extractor
+python gui.py
+</pre>
+
+<p>No external dependencies required (pure Python).</p>
+
+<hr>
+
+<h2>💻 CLI Usage</h2>
+
+<h3>Basic extraction</h3>
+<pre>python extract.py mailbox.mbox</pre>
+
+<h3>Export ALL emails as HTML</h3>
+<pre>python extract.py mailbox.mbox --html-all</pre>
+
+<h3>Export only emails with attachments</h3>
+<pre>python extract.py mailbox.mbox --html</pre>
+
+<h3>Filter attachments</h3>
+<pre>python extract.py mailbox.mbox --types pdf jpg png</pre>
+
+<h3>Organize by sender</h3>
+<pre>python extract.py mailbox.mbox --by-sender</pre>
+
+<h3>Combine options</h3>
+<pre>python extract.py mailbox.mbox --html-all --by-sender --types pdf jpg</pre>
+
+<hr>
+
+<h2>🖥️ GUI Usage</h2>
+
+<pre>python gui.py</pre>
+
+<p><b>Features:</b></p>
+<ul>
+<li>File picker for MBOX</li>
+<li>Output folder selector</li>
+<li>HTML export toggles</li>
+<li>Sender grouping option</li>
+<li>Attachment filtering</li>
+</ul>
+
+<hr>
+
+<h2>📁 Output Structure</h2>
+
+<div class="box">
+<pre>
+output/
+  2024/
+    January/
+      email_1.html
+      invoice.pdf
+</pre>
+</div>
+
+<p>With sender grouping:</p>
+
+<div class="box">
+<pre>
+output/
+  2024/
+    January/
+      Gmail/
+        email.html
+</pre>
+</div>
+
+<hr>
+
+<h2>📌 Use Cases</h2>
+
+<ul>
+<li>Email backups</li>
+<li>Invoice extraction</li>
+<li>Legal archiving</li>
+<li>Data analysis preparation</li>
+</ul>
+
+<hr>
+
+<h2>⚠️ Limitations</h2>
+
+<ul>
+<li>No inline image (CID) embedding in HTML</li>
+<li>No email threading reconstruction</li>
+<li>Large mailboxes may take time to process</li>
+</ul>
+
+<hr>
+
+<h2>🚀 Future Improvements</h2>
+
+<ul>
+<li>Email threading support</li>
+<li>Offline email viewer UI</li>
+<li>CSV export of metadata</li>
+<li>Performance optimizations</li>
+</ul>
+
+<hr>
+
+<h2>📜 License</h2>
+<p>MIT License — free to use and modify.</p>
+
+</body>
+</html>

@@ -1,0 +1,16 @@
+mbox-extractor/
+│
+├── extract.py
+├── gui.py
+│
+├── README.md
+├── README.html
+├── requirements.txt
+├── LICENSE
+├── .gitignore
+│
+├── assets/
+│   └── screenshot.png   (optional GUI screenshot)
+│
+└── examples/
+    └── sample_usage.sh
