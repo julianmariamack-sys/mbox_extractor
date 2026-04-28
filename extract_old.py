@@ -1,14 +1,11 @@
-#!/usr/bin/env python3
-
 import mailbox
 import os
 import email
 import argparse
-import hashlib
-import re
-
 from email import policy
 from email.utils import parsedate_to_datetime
+import re
+import hashlib
 
 
 # -------------------------
@@ -16,35 +13,7 @@ from email.utils import parsedate_to_datetime
 # -------------------------
 
 def safe_name(name: str) -> str:
-    return "".join(c if c.isalnum() or c in "._-@" else "_" for c in name or "")
-
-
-def truncate(text, max_len):
-    return text[:max_len] if text and len(text) > max_len else text
-
-
-def smart_filename(sender, subject, index, max_len=100):
-    sender = truncate(sender, 20)
-    subject = truncate(subject, 40)
-
-    base = f"{sender}_{subject}_{index}"
-    h = hashlib.md5(base.encode()).hexdigest()[:6]
-
-    filename = f"{base}_{h}.html"
-    return truncate(filename, max_len)
-
-
-def unique_path(path):
-    base, ext = os.path.splitext(path)
-    i = 1
-    while os.path.exists(path):
-        path = f"{base}_{i}{ext}"
-        i += 1
-    return path
-
-
-def ensure_dir(path):
-    os.makedirs(path, exist_ok=True)
+    return "".join(c if c.isalnum() or c in "._-@" else "_" for c in name)
 
 
 def get_year_month(msg):
@@ -57,20 +26,16 @@ def get_year_month(msg):
 
 def get_html(msg):
     if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/html":
-                return part.get_payload(decode=True).decode(errors="ignore")
-
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                text = part.get_payload(decode=True)
-                if text:
-                    return f"<pre>{text.decode(errors='ignore')}</pre>"
+        for p in msg.walk():
+            if p.get_content_type() == "text/html":
+                return p.get_payload(decode=True).decode(errors="ignore")
+        for p in msg.walk():
+            if p.get_content_type() == "text/plain":
+                text = p.get_payload(decode=True).decode(errors="ignore")
+                return f"<pre>{text}</pre>"
     else:
-        payload = msg.get_payload(decode=True)
-        if payload:
-            return payload.decode(errors="ignore")
-
+        if msg.get_content_type() in ["text/html", "text/plain"]:
+            return msg.get_payload(decode=True).decode(errors="ignore")
     return None
 
 
@@ -83,10 +48,30 @@ def build_base(output, year, month, sender=None, by_sender=False):
         base = os.path.join(base, "UnknownDate")
 
     if by_sender and sender:
-        sender = truncate(sender, 40)
         base = os.path.join(base, sender)
 
     return base
+
+
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
+
+
+def smart_filename(sender, subject, index):
+    base = f"{sender}_{subject}_{index}"
+    base = base[:80]  # truncate aggressively
+
+    h = hashlib.md5(base.encode()).hexdigest()[:8]
+
+    return f"{base}_{h}.html"
+
+def unique_path(path):
+    base, ext = os.path.splitext(path)
+    i = 1
+    while os.path.exists(path):
+        path = f"{base}_{i}{ext}"
+        i += 1
+    return path
 
 
 # -------------------------
@@ -94,7 +79,7 @@ def build_base(output, year, month, sender=None, by_sender=False):
 # -------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Robust MBOX extractor")
+    parser = argparse.ArgumentParser(description="MBOX Extractor (clean refactor)")
 
     parser.add_argument("mbox")
     parser.add_argument("-o", "--output", default="output")
@@ -123,13 +108,9 @@ def main():
         year, month = get_year_month(msg)
 
         raw_sender = msg.get("from", "unknown")
-        sender_clean = re.sub(r"<.*?>", "", raw_sender).strip()
-        sender_safe = truncate(safe_name(sender_clean), 40)
+        sender_safe = safe_name(re.sub(r"<.*?>", "", raw_sender).strip())
 
-        subject_safe = truncate(
-            safe_name(msg.get("subject", f"email_{i}")),
-            60
-        )
+        subject = safe_name(msg.get("subject", f"email_{i}"))
 
         base = build_base(
             args.output,
@@ -161,20 +142,15 @@ def main():
             if html:
                 ensure_dir(base)
 
-                filename = smart_filename(sender_safe, subject_safe, i)
-                path = os.path.join(base, filename)
+                path = os.path.join(base, f"{sender_safe}_{subject}_{i}.html")
                 path = unique_path(path)
 
-                try:
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(html)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(html)
 
-                    print("Saved email:", path)
-                    email_count += 1
-                    wrote_something = True
-
-                except OSError as e:
-                    print(f"Skipped email (path issue): {e}")
+                print("Saved email:", path)
+                email_count += 1
+                wrote_something = True
 
         # -------------------------
         # ATTACHMENTS
@@ -184,16 +160,30 @@ def main():
                 continue
 
             filename = part.get_filename() or f"attachment_{i}"
-            filename = truncate(safe_name(filename), 80)
+            filename = safe_name(filename)
 
+            # type filtering
             if args.types:
                 allowed = tuple(f".{t.lower().lstrip('.')}" for t in args.types)
                 if not filename.lower().endswith(allowed):
                     continue
 
+            ensure_dir(base)
+
+            #path = os.path.join(base, filename)
+            #path = unique_path(path)
+            
+            filename = smart_filename(sender_safe, subject, i)
+            path = os.path.join(base, filename)
+            path = unique_path(path)
+
+            #with open(path, "wb") as f:
+                #f.write(part.get_payload(decode=True))
+                
+            ##FIX1
             payload = part.get_payload(decode=True)
 
-            # --- robust payload handling ---
+            # --- HARD GUARD ---
             if payload is None:
                 raw = part.get_payload()
 
@@ -202,28 +192,21 @@ def main():
                 elif isinstance(raw, bytes):
                     payload = raw
                 else:
-                    print(f"Skipped invalid attachment: {filename}")
+                    print(f"Skipped invalid attachment (no usable data): {filename}")
                     continue
 
+            # --- FINAL SAFETY CHECK ---
             if not isinstance(payload, (bytes, bytearray)):
                 print(f"Skipped non-bytes attachment: {filename}")
                 continue
 
-            ensure_dir(base)
+            with open(path, "wb") as f:
+                f.write(payload)
+            ##FIX1
 
-            path = os.path.join(base, filename)
-            path = unique_path(path)
-
-            try:
-                with open(path, "wb") as f:
-                    f.write(payload)
-
-                print("Saved attachment:", path)
-                attach_count += 1
-                wrote_something = True
-
-            except OSError as e:
-                print(f"Skipped attachment (path issue): {e}")
+            print("Saved attachment:", path)
+            attach_count += 1
+            wrote_something = True
 
     print("\nDone.")
     print(f"Emails exported: {email_count}")
